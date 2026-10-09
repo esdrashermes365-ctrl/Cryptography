@@ -25,9 +25,20 @@ def migrate() -> None:
     Base.metadata.create_all(bind=engine)  # ne crée que ce qui manque (password_reset_tokens)
 
     with engine.begin() as connection:
+        dialect = connection.dialect.name
         user_columns = {c["name"] for c in inspect(connection).get_columns("users")}
         if "password_changed_at" not in user_columns:
-            connection.execute(text("ALTER TABLE users ADD COLUMN password_changed_at DATETIME NULL"))
+            column_type = (
+                "TIMESTAMP WITH TIME ZONE"
+                if dialect == "postgresql"
+                else "DATETIME"
+            )
+            connection.execute(
+                text(
+                    "ALTER TABLE users ADD COLUMN "
+                    f"password_changed_at {column_type} NULL"
+                )
+            )
 
         tenant_columns = {c["name"] for c in inspect(connection).get_columns("tenants")}
         if "email_encrypted" not in tenant_columns:
@@ -59,8 +70,15 @@ def migrate() -> None:
         if missing:
             raise RuntimeError(f"{missing} tenant(s) sans e-mail : migration annulée.")
 
-        if connection.dialect.name == "mysql":
+        if dialect == "mysql":
             connection.execute(text("ALTER TABLE tenants MODIFY COLUMN email_encrypted TEXT NOT NULL"))
+        elif dialect == "postgresql":
+            connection.execute(
+                text(
+                    "ALTER TABLE tenants ALTER COLUMN email_encrypted "
+                    "SET NOT NULL"
+                )
+            )
 
     print(f"Migration terminée ({len(rows)} tenant(s) mis à jour).")
 

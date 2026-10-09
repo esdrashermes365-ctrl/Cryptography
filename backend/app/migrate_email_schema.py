@@ -86,17 +86,35 @@ def migrate_email_schema():
                 text("CREATE UNIQUE INDEX ix_users_email_hash ON users (email_hash)")
             )
 
-        connection.execute(
-            text(
-                "ALTER TABLE users MODIFY COLUMN email_encrypted TEXT NOT NULL, "
-                "MODIFY COLUMN email_hash VARCHAR(64) NOT NULL"
-            )
-        )
-
-        if "email" in columns:
-            connection.execute(text("UPDATE users SET email = NULL"))
+        if connection.dialect.name == "mysql":
             connection.execute(
-                text("ALTER TABLE users MODIFY COLUMN email VARCHAR(255) NULL")
+                text(
+                    "ALTER TABLE users MODIFY COLUMN email_encrypted TEXT NOT NULL, "
+                    "MODIFY COLUMN email_hash VARCHAR(64) NOT NULL"
+                )
+            )
+            if "email" in columns:
+                connection.execute(text("UPDATE users SET email = NULL"))
+                connection.execute(
+                    text("ALTER TABLE users MODIFY COLUMN email VARCHAR(255) NULL")
+                )
+        elif connection.dialect.name == "postgresql":
+            connection.execute(
+                text(
+                    "ALTER TABLE users ALTER COLUMN email_encrypted SET NOT NULL"
+                )
+            )
+            connection.execute(
+                text("ALTER TABLE users ALTER COLUMN email_hash SET NOT NULL")
+            )
+            if "email" in columns:
+                connection.execute(
+                    text("ALTER TABLE users ALTER COLUMN email DROP NOT NULL")
+                )
+                connection.execute(text("UPDATE users SET email = NULL"))
+        else:
+            raise RuntimeError(
+                f"Migration non prise en charge pour {connection.dialect.name}."
             )
 
     print("Migration des emails terminée.")
