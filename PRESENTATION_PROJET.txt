@@ -1,0 +1,199 @@
+ESPACE CRYPTOGRAPHIE
+Presentation du projet et reperes dans le code
+============================================================
+
+1. OBJECTIF
+-----------
+Espace Cryptographie est une application web avec une interface React
+et une API Python/FastAPI. Le parcours actuellement implemente permet
+de creer un compte, de lui associer un tenant, puis de se connecter.
+
+Le projet contient egalement des ecrans de tableau de bord pour des
+fonctions envisagees autour des tenants, du chiffrement, du hachage,
+de la signature et des journaux. Ces ecrans sont pour l'instant des
+pages de demonstration, pas des outils cryptographiques operationnels.
+
+2. TECHNOLOGIES ET ARCHITECTURE
+-------------------------------
+Interface :
+- React et Vite pour afficher l'application dans le navigateur.
+- React Router pour les URL /login, /register et les pages du tableau.
+- Tailwind CSS pour les styles.
+
+Serveur :
+- FastAPI pour recevoir les requetes HTTP.
+- Pydantic pour valider les champs envoyes par le navigateur.
+- SQLAlchemy pour lire et ecrire dans la base relationnelle configuree.
+- Argon2 pour hacher et verifier les mots de passe.
+- AES-GCM pour chiffrer le secret associe au tenant.
+- JWT pour remettre un jeton apres une connexion reussie.
+
+Fichiers principaux :
+- src/Pages/Register.jsx : formulaire d'inscription.
+- src/Pages/Login.jsx : formulaire de connexion.
+- src/App.jsx et src/main.jsx : routes et demarrage React.
+- backend/app/main.py : routes HTTP d'inscription et de connexion.
+- backend/app/models.py : tables User et Tenant.
+- backend/app/db.py : configuration et sessions de base de donnees.
+- backend/app/crypto.py : chiffrement/dechiffrement AES-GCM.
+- backend/.env : configuration locale (ne pas partager ni publier).
+
+3. PARCOURS DE CREATION DE COMPTE
+---------------------------------
+1) La personne renseigne son nom, son email et deux fois son mot de passe.
+2) Le navigateur verifie que les mots de passe correspondent.
+3) Le formulaire envoie les champs en JSON a POST /api/register.
+4) FastAPI valide les donnees, notamment le format de l'email.
+5) Le serveur refuse un email deja utilise.
+6) Le mot de passe est hache avec Argon2; le mot de passe brut n'est pas
+   enregistre dans la base.
+7) Le serveur ajoute un utilisateur et un tenant. Le secret du tenant est
+   chiffre avec AES-GCM avant son enregistrement.
+8) Apres succes, l'interface affiche un message et invite a se connecter.
+
+Reperes du formulaire :
+  src/Pages/Register.jsx, lignes 5-15 : donnees et etat du formulaire.
+  src/Pages/Register.jsx, lignes 17-21 : mise a jour des champs.
+  src/Pages/Register.jsx, lignes 24-34 : comparaison des mots de passe.
+  src/Pages/Register.jsx, lignes 37-44 : appel HTTP a l'API.
+  src/Pages/Register.jsx, lignes 46-61 : affichage du resultat ou erreur.
+  src/Pages/Register.jsx, lignes 99-174 : champs et bouton du formulaire.
+
+Reperes du serveur :
+  backend/app/main.py, lignes 38-45 : modele et noms des champs d'inscription.
+  backend/app/main.py, lignes 52-97 : route POST /api/register.
+  backend/app/main.py, lignes 55-61 : confirmation du mot de passe et doublon.
+  backend/app/main.py, lignes 68-82 : creation utilisateur et tenant.
+  backend/app/main.py, lignes 83-96 : transaction, annulation en cas d'erreur.
+
+4. PARCOURS DE CONNEXION
+------------------------
+1) L'interface envoie l'email et le mot de passe a POST /api/login.
+2) L'API recherche l'utilisateur dans la base.
+3) Argon2 compare le mot de passe saisi au hachage stocke.
+4) Si les identifiants sont corrects, l'API cree un JWT avec une expiration
+   et le place dans un cookie httpOnly (illisible par le JavaScript).
+5) Le navigateur envoie ce cookie automatiquement. Au chargement, le front
+   appelle GET /api/me pour savoir qui est connecte. Rien n'est stocke dans
+   localStorage. POST /api/logout supprime le cookie.
+6) Un mauvais mot de passe et un email inconnu donnent la meme reponse, en
+   un temps comparable. Au-dela de 5 echecs par 15 minutes (compte + IP),
+   l'API repond 429.
+
+Reperes de code :
+  src/Pages/Login.jsx, lignes 4-11 : donnees et etat du formulaire.
+  src/Pages/Login.jsx, lignes 19-23 : demarrage de la soumission.
+  src/Pages/Login.jsx, lignes 25-32 : appel HTTP a l'API.
+  src/Pages/Login.jsx, lignes 34-46 : erreurs, stockage et redirection.
+  backend/app/main.py, lignes 47-50 : modele des donnees de connexion.
+  backend/app/main.py, lignes 99-122 : recherche utilisateur et controle
+    du mot de passe.
+  backend/app/main.py, lignes 124-137 : fabrication du JWT et reponse.
+
+5. DONNEES ET PROTECTION CRYPTOGRAPHIQUE
+----------------------------------------
+La table users contient l'identifiant, le nom, l'email, le hachage du mot
+de passe et la date de creation. La table tenants associe un tenant a un
+utilisateur et conserve son secret chiffre.
+
+  backend/app/models.py, lignes 6-14 : modele User.
+  backend/app/models.py, lignes 16-24 : modele Tenant.
+  backend/app/crypto.py, lignes 7-14 : chargement et lecture de la cle.
+  backend/app/crypto.py, lignes 16-21 : chiffrement AES-GCM.
+  backend/app/crypto.py, lignes 23-28 : dechiffrement AES-GCM.
+  backend/app/db.py, lignes 7-17 : configuration de la base.
+  backend/app/db.py, lignes 19-25 : ouverture puis fermeture d'une session.
+
+La cle AES et l'adresse de la base sont configurees dans backend/.env.
+Ce fichier contient des secrets : il ne doit pas etre ajoute a un depot
+public, copie dans cette presentation, ni envoye a des tiers.
+
+L'email est chiffre en AES-256-GCM (colonne email_encrypted). Pour le
+retrouver a la connexion, on stocke un HMAC-SHA256 (colonne email_hash)
+calcule avec une cle dediee, EMAIL_HASH_KEY : sans cette cle, on ne peut
+pas tester des adresses connues contre la base.
+
+Trois cles distinctes dans backend/.env, une par usage :
+  ENCRYPTION_SECRET_KEY : chiffrement AES des donnees en base
+  JWT_SECRET_KEY        : signature des sessions
+  EMAIL_HASH_KEY        : index de recherche des emails
+Le serveur refuse de demarrer si l'une manque ou si deux sont identiques.
+Modele de reference : backend/.env.example. Generation :
+  python -m app.generate_keys
+
+6. ROUTAGE ET DEMARRAGE
+-----------------------
+  src/main.jsx, lignes 1-12 : monte React sous BrowserRouter.
+  src/App.jsx, lignes 35-49 : declare les routes de connexion,
+    d'inscription et du tableau de bord.
+  backend/app/main.py, lignes 18-31 : cree l'application FastAPI et
+    autorise les origines locales du serveur Vite.
+  backend/requirements.txt : dependances Python du backend.
+
+Pour lancer le serveur, ouvrir un terminal dans le dossier backend :
+  .\venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
+
+Pour lancer l'interface, ouvrir un autre terminal a la racine du projet :
+  npm run dev
+
+L'interface appelle actuellement http://localhost:8000 et Vite utilise
+habituellement http://localhost:5173. Les deux processus doivent rester
+demarres pour utiliser les formulaires.
+
+7. ETAT ACTUEL ET LIMITES A CONNAITRE
+-------------------------------------
+- L'inscription et la connexion sont branchees sur la base configuree.
+- Les pages du tableau de bord affichent du contenu de demonstration.
+- Dans src/components/Sidebar.jsx, les boutons mettent a jour l'element
+  visuellement actif; ils ne changent pas encore la route.
+- Le dashboard est protege cote front (RequireAuth) et la dependance
+  get_current_user verifie la session cote serveur. Aucune route metier ne
+  l'utilise encore, puisqu'il n'y en a pas : elle est prete pour les
+  prochaines.
+- Les actions chiffrement de fichiers, hashage, signature RSA et audit
+  annoncees par l'interface ne sont pas encore implementees.
+- Ne jamais utiliser les cles de developpement ni les valeurs locales du
+  fichier .env comme configuration de production.
+
+8. MISE A JOUR D'UNE INSTALLATION EXISTANTE
+-------------------------------------------
+Depuis le dossier backend, avec le venv actif :
+1) python -m app.generate_keys
+   Ajouter JWT_SECRET_KEY et EMAIL_HASH_KEY au .env. Ne pas toucher a
+   ENCRYPTION_SECRET_KEY : la changer rendrait les emails illisibles.
+2) python -m app.migrate_email_hash_hmac
+   Recalcule l'index des emails des comptes existants. Tant qu'il n'est pas
+   passe, ces comptes ne peuvent pas se connecter.
+3) Si le .env a deja ete publie (GitHub, zip partage) : changer le mot de
+   passe de la base et recreer les comptes, car l'ancienne cle AES est
+   consideree comme compromise.
+4) Tests : pip install -r requirements-dev.txt puis pytest.
+5) En production : APP_ENV=production, CORS_ORIGINS avec le vrai domaine,
+   uvicorn lance avec --proxy-headers derriere un reverse proxy HTTPS.
+
+FIN
+
+
+============================================================
+MISE A JOUR : FONCTIONS AJOUTEES (remplace les sections 1 et 7 sur l'etat)
+============================================================
+Les pages de chiffrement, dechiffrement, hashage et signature sont reliees
+a l'API et produisent de vrais resultats. Les numeros de lignes cites plus
+haut ont change. Nouveaux fichiers :
+
+  backend/app/routers/auth.py          inscription, connexion, mot de passe oublie
+  backend/app/routers/crypto_routes.py chiffrement / dechiffrement
+  backend/app/routers/hashing.py       creation et verification d'empreintes
+  backend/app/routers/signature.py     signature et verification RSA-PSS
+  backend/app/crypto_service.py        algorithmes de chiffrement a la demande
+  backend/app/hash_service.py          Argon2id, Bcrypt, SHA-256, SHA-512
+  backend/app/signature_service.py     RSA-PSS, empreintes, comparaison
+  backend/app/mailer.py                envoi SMTP du lien de reinitialisation
+  backend/app/migrate_v2.py            migration d'une base existante
+  src/Pages/ForgotPassword.jsx, ResetPassword.jsx
+
+E-mail du tenant : colonne tenants.email_encrypted (AES-256-GCM, nonce propre).
+Mot de passe oublie : seul le SHA-256 du jeton est stocke ; le jeton est dans
+le fragment (#) du lien ; apres changement, les sessions anterieures sont
+refusees (users.password_changed_at).
+Limites actuelles : pas de journal d'audit, pas de cles API pour tenants externes.
